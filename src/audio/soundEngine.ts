@@ -469,27 +469,38 @@ export class SoundEngine {
       }
     }
 
-    // Chapter 7: Super-storm evacuation alarm, MAV liftoff, comms cutoff, visor shatter
+    // Chapter 7: Sol 19 peaceful survey (0..5.8s) -> Sudden Red Alert (5.8s) -> Gradual cyclone & comms cut (11.8s) -> Visor impact (15.2s)
     if (chapterId === 'storm_evacuation') {
-      if (localTime < 7.8) {
-        const alarmIdx = Math.floor(localTime / 1.15);
+      if (localTime >= 2.2 && localTime < 5.7) {
+        const scanIdx = Math.floor((localTime - 2.2) / 1.4);
+        if (scanIdx !== this.lastSolTick) {
+          this.lastSolTick = scanIdx;
+          this.playTone(1180, 0.08, 'sine', 0.09);
+        }
+      }
+      if (localTime >= 5.8 && localTime < 11.8) {
+        this.fireOnce('sol19_red_alert', () => {
+          this.playTone(95, 0.35, 'sawtooth', 0.28, 0, 48);
+          this.playTone(980, 0.14, 'square', 0.18, 0.02);
+        });
+        const alarmIdx = Math.floor((localTime - 5.8) / 1.15);
         if (alarmIdx !== this.lastAlarmTick) {
           this.lastAlarmTick = alarmIdx;
-          this.playTone(820, 0.22, 'sawtooth', 0.2, 0, 580);
+          this.playTone(840, 0.22, 'sawtooth', 0.21, 0, 580);
           this.playTone(620, 0.2, 'sawtooth', 0.18, 0.24, 480);
         }
       }
-      if (localTime >= 7.8) {
+      if (localTime >= 11.8) {
         this.fireOnce('comms_severed', () => {
-          this.playNoiseBurst(0.35, 'highpass', 1500, 0.34, 0);
-          this.playTone(1450, 0.32, 'sine', 0.16, 0.18);
+          this.playNoiseBurst(0.38, 'highpass', 1500, 0.34, 0);
+          this.playTone(1450, 0.34, 'sine', 0.16, 0.18);
         });
       }
-      if (localTime >= 11.1) {
+      if (localTime >= 15.2) {
         this.fireOnce('visor_impact', () => {
-          this.playTone(68, 0.48, 'sawtooth', 0.36, 0, 30);
-          this.playNoiseBurst(0.32, 'highpass', 2200, 0.34, 0);
-          this.playTone(2150, 0.85, 'sine', 0.14, 0.06);
+          this.playTone(68, 0.48, 'sawtooth', 0.38, 0, 30);
+          this.playNoiseBurst(0.34, 'highpass', 2200, 0.36, 0);
+          this.playTone(2150, 0.85, 'sine', 0.15, 0.06);
         });
       }
     }
@@ -533,11 +544,19 @@ export class SoundEngine {
       padTarget = 0.12;
       padCutoff = 460;
     } else if (chapterId === 'storm_evacuation') {
-      padTarget = localTime > 11.8 ? 0 : 0.11;
-      f1 = 110.0;
-      f2 = 155.56;
-      f3 = 233.08;
-      padCutoff = 380;
+      if (localTime < 5.8) {
+        padTarget = localTime < 1.6 ? 0.09 : 0.13;
+        f1 = 130.81;
+        f2 = 196.0;
+        f3 = 311.13;
+        padCutoff = 460;
+      } else {
+        padTarget = localTime > 15.8 ? 0 : 0.12;
+        f1 = 110.0;
+        f2 = 155.56;
+        f3 = 233.08;
+        padCutoff = 380;
+      }
     } else if (chapterId === 'awakening') {
       padTarget = localTime > 2.2 ? 0.12 : 0.02;
       f1 = 130.81;
@@ -561,7 +580,7 @@ export class SoundEngine {
     } else if (chapterId === 'mars_landing' && localTime < 7.8) {
       rumbleTarget = 0.38;
       rumbleFreq = 280;
-    } else if (chapterId === 'storm_evacuation' && localTime > 8.0 && localTime < 11.8) {
+    } else if (chapterId === 'storm_evacuation' && localTime >= 12.2 && localTime < 16.0) {
       rumbleTarget = 0.56;
       rumbleFreq = 320;
     }
@@ -575,8 +594,14 @@ export class SoundEngine {
       stormTarget = 0.22;
       stormFreq = 1050;
     } else if (chapterId === 'storm_evacuation') {
-      stormTarget = localTime > 12.2 ? 0.12 : Math.min(0.75, 0.25 + localTime * 0.055);
-      stormFreq = 400 + Math.sin(localTime * 2.6) * 180;
+      if (localTime < 5.8) {
+        stormTarget = 0.08 + Math.max(0, (localTime - 3.8) * 0.03);
+        stormFreq = 320;
+      } else {
+        const ramp = Math.min(1, (localTime - 5.8) / 6.8);
+        stormTarget = localTime > 16.2 ? 0.12 : 0.14 + ramp * 0.64;
+        stormFreq = 360 + ramp * 120 + Math.sin(localTime * 2.6) * 160;
+      }
     } else if (chapterId === 'mars_arrival_timelapse') {
       stormTarget = 0.13;
       stormFreq = 340;

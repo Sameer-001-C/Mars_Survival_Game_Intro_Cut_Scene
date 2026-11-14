@@ -65,6 +65,28 @@ export const CutsceneHUD: React.FC<CutsceneHUDProps> = ({
         </svg>
       )}
 
+      {/* Sol 19 Intro Title Card before peaceful field survey opens */}
+      {hud.chapterId === 'storm_evacuation' && hud.localTime < 2.4 && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-10 bg-[#07080c] flex flex-col items-center justify-center pointer-events-none px-6 text-center"
+          style={{
+            opacity: hud.localTime < 1.5 ? 1 : Math.max(0, 1 - (hud.localTime - 1.5) / 0.9),
+          }}
+        >
+          <div className="text-xs md:text-sm font-mono-tech tracking-[0.35em] text-amber-400/90 mb-3">
+            ARES IV SURFACE OPERATIONS · JEZERO BASIN
+          </div>
+          <div className="font-display text-6xl md:text-8xl font-bold tracking-[0.14em] text-white leading-none">
+            SOL 19
+          </div>
+          <div className="w-24 h-0.5 bg-amber-500/80 my-4" />
+          <div className="text-xs font-mono-tech tracking-widest text-slate-300">
+            07:42 LMST · NORTH CORE RIDGE SURVEY
+          </div>
+        </div>
+      )}
+
       {/* Blackout fade layer between storm strike and Sol 23 awakening */}
       {hud.blackoutOpacity > 0.01 && (
         <div
@@ -200,20 +222,20 @@ export const CutsceneHUD: React.FC<CutsceneHUDProps> = ({
           </div>
         )}
 
-        {/* Chapter 7: Critical Dust Storm & Comms Lost Alert */}
+        {/* Chapter 7: Sudden Red Alert & Comms Severed Banner */}
         {hud.stormAlertActive && (
           <div className="fixed top-16 inset-x-0 flex justify-center px-4">
-            <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-lg bg-[#3b0e08]/92 border border-red-400/50 text-red-100">
-              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />
+            <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-lg bg-[#4a0b07]/95 border border-red-400/75 text-red-50 shadow-lg">
+              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 animate-pulse" />
               <div className="text-xs md:text-sm font-mono-tech">
-                <span className="font-bold text-red-300">DUST STORM EVACUATION</span>
+                <span className="font-bold text-red-300">RED ALERT · DUST CYCLONE</span>
                 <span aria-hidden="true" className="mx-2 text-red-400/60">
                   ·
                 </span>
                 <span>
                   {hud.commsLost
-                    ? 'TEAM COMMS LOST — MAV ASCENDING WITHOUT YOU'
-                    : 'WIND SHEAR 185 KM/H — REACH MAV IMMEDIATELY'}
+                    ? 'COMMS SEVERED — MAV LAUNCHING WITHOUT YOU'
+                    : 'EVACUATE IMMEDIATELY — REACH MAV AIRLOCK'}
                 </span>
               </div>
             </div>

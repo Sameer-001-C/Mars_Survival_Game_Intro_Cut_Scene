@@ -403,6 +403,11 @@ export class CutsceneEngine {
       createAstronaut(0xc93b2b, 'eva'),
     ];
     this.marsCrew.forEach((c) => this.marsGroup.add(c.group));
+
+    // Sol 19 Field Core Scanner Rig out on North Ridge (75m away from the MAV)
+    const fieldRig = this.buildFieldSurveyRig();
+    fieldRig.position.set(14.2, marsHeightAt(14.2, 34.0), 34.0);
+    this.marsGroup.add(fieldRig);
     this.scene.add(this.marsGroup);
 
     if (!this.isSoftwareGl) {
@@ -652,6 +657,53 @@ export class CutsceneEngine {
     });
 
     return { cruiser, crew, holoGroup };
+  }
+
+  private buildFieldSurveyRig(): THREE.Group {
+    const rig = new THREE.Group();
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x3b4454, metalness: 0.72, roughness: 0.35 });
+    const housingMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.25, roughness: 0.42 });
+    const glowAmber = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+    const glowCyan = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+
+    // Three tripod legs
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.025, 1.35, 8), metalMat);
+      leg.position.set(Math.cos(a) * 0.28, 0.62, Math.sin(a) * 0.28);
+      leg.rotation.z = Math.cos(a) * 0.26;
+      leg.rotation.x = -Math.sin(a) * 0.26;
+      rig.add(leg);
+    }
+
+    // Core scanner head + status screen
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.28, 0.36), housingMat);
+    head.position.set(0, 1.24, 0);
+    rig.add(head);
+
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.03), glowCyan);
+    screen.position.set(0, 1.26, 0.18);
+    rig.add(screen);
+
+    // Core drill tube + amber beacon
+    const drill = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.15, 10), metalMat);
+    drill.position.set(0, 0.56, 0);
+    rig.add(drill);
+
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 10), glowAmber);
+    beacon.position.set(0, 1.44, 0);
+    rig.add(beacon);
+
+    // Sampled basalt outcrop below the drill
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.42, 0),
+      new THREE.MeshStandardMaterial({ color: 0x693424, roughness: 0.92 })
+    );
+    rock.scale.set(1.3, 0.55, 1.1);
+    rock.position.set(0.1, 0.12, 0);
+    rig.add(rock);
+
+    return rig;
   }
 
   private buildTransitSpeck(): THREE.Group {
@@ -1302,69 +1354,125 @@ export class CutsceneEngine {
       this.marsGroup.visible = true;
       this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
 
-      // Violent crimson-ochre dust storm closing in!
-      const stormSeverity = THREE.MathUtils.clamp(lt / 7.5, 0.25, 1);
-      _c1.copy(SKY_MARS_DAY).lerp(SKY_MARS_STORM, stormSeverity);
-      this.scene.background = _c1;
-      (this.scene.fog as THREE.FogExp2).color.copy(_c1);
-      (this.scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.012, 0.036, stormSeverity);
-      this.keyLight.intensity = 1.0 - stormSeverity * 0.4;
-
-      // Whipping dust particles across the camera
-      const pAttr = this.marsEnv.dustParticles.geometry.attributes.position as THREE.BufferAttribute;
-      (this.marsEnv.dustParticles.material as THREE.PointsMaterial).opacity = 0.4 + stormSeverity * 0.55;
-      for (let i = 0; i < pAttr.count; i++) {
-        let px = pAttr.getX(i) + dt * (28 + stormSeverity * 36);
-        const py = pAttr.getY(i);
-        if (px > 70) px = -70;
-        pAttr.setXYZ(i, px, py, pAttr.getZ(i));
-      }
-      pAttr.needsUpdate = true;
-
-      // Our 3 teammates sprint toward the distant MAV at (0, -36) and board before liftoff!
       const padY = marsHeightAt(0, -36);
-      this.marsCrew.forEach((c, idx) => {
-        const reachT = THREE.MathUtils.clamp(lt / 6.2, 0, 1);
-        c.group.visible = lt < 6.8;
-        const startX = -8 + idx * 4;
-        const startZ = -18 + idx * 2;
-        const cx = THREE.MathUtils.lerp(startX, idx - 1, reachT);
-        const cz = THREE.MathUtils.lerp(startZ, -34, reachT);
-        c.group.position.set(cx, marsHeightAt(cx, cz), cz);
-        c.group.rotation.y = Math.PI;
-        poseAstronautSprint(c, lt * 9.5 + idx);
-      });
+      const alertAt = 5.8;
 
-      // MAV Evacuation Ascent at lt >= 8.0s!
-      if (lt >= 8.0) {
-        const ascT = lt - 8.0;
-        const mavY = padY + Math.pow(ascT, 2.1) * 3.8;
-        this.marsMav.group.position.set(0, mavY, -36);
-        this.marsMav.flames[0].visible = true;
-        this.marsMav.flames[0].scale.set(1.1, 0.8 + Math.random() * 0.4, 1.1);
-      } else {
-        // Lander rocking slightly in high wind
+      if (lt < alertAt) {
+        // Stage A (lt 0..5.8s): Sol 19 calm sunny morning; our astronaut works calmly on North Ridge core survey far from MAV
+        this.scene.background = _c1.copy(SKY_MARS_DAY);
+        (this.scene.fog as THREE.FogExp2).color.copy(SKY_MARS_DAY);
+        (this.scene.fog as THREE.FogExp2).density = 0.0078;
+        this.keyLight.position.set(42, 50, 26);
+        this.keyLight.intensity = 2.05;
+
+        const pAttr = this.marsEnv.dustParticles.geometry.attributes.position as THREE.BufferAttribute;
+        (this.marsEnv.dustParticles.material as THREE.PointsMaterial).opacity = 0.16;
+        for (let i = 0; i < pAttr.count; i++) {
+          let px = pAttr.getX(i) + dt * 3.0;
+          if (px > 70) px = -70;
+          pAttr.setXYZ(i, px, pAttr.getY(i), pAttr.getZ(i));
+        }
+        pAttr.needsUpdate = true;
+
+        // Teammates working calmly right near the MAV and legacy Hab (~70m downrange)
+        this.marsCrew.forEach((c, idx) => {
+          c.group.visible = true;
+          const baseX = -5.5 + idx * 4.5;
+          const baseZ = -26.5 + (idx % 2) * 2.5;
+          const walkZ = baseZ + Math.sin(lt * 0.6 + idx) * 2.0;
+          c.group.position.set(baseX, marsHeightAt(baseX, walkZ), walkZ);
+          c.group.rotation.y = Math.cos(lt * 0.6 + idx) >= 0 ? 0 : Math.PI;
+          poseAstronautWalk(c, lt * 3.2 + idx, 0.45);
+        });
+
         this.marsMav.group.position.set(0, padY, -36);
-        this.marsMav.group.rotation.z = Math.sin(lt * 6) * 0.025 * stormSeverity;
+        this.marsMav.group.rotation.set(0, 0, 0);
         this.marsMav.flames[0].visible = false;
+
+        // First-person astronaut calmly surveying North Ridge core rig, glancing up toward distant MAV before alert
+        const standX = 13.0;
+        const standZ = 35.6;
+        const standY = marsHeightAt(standX, standZ) + 1.66;
+        this.camera.position.set(standX, standY + Math.sin(lt * 1.4) * 0.02, standZ);
+        this.camera.fov = 62;
+        this.camera.updateProjectionMatrix();
+
+        const lookUp = THREE.MathUtils.smoothstep(lt, 3.6, 5.7);
+        const lookX = THREE.MathUtils.lerp(14.2, 0.5, lookUp);
+        const lookY = THREE.MathUtils.lerp(
+          marsHeightAt(14.2, 34.0) + 1.05,
+          padY + 5.5,
+          lookUp
+        );
+        const lookZ = THREE.MathUtils.lerp(34.0, -34.0, lookUp);
+        this.camera.lookAt(lookX, lookY, lookZ);
+      } else {
+        // Stage B (lt >= 5.8s): Sudden RED ALERT! Storm builds gradually from horizon, crew sprints to MAV, comms severed, forced takeoff!
+        const stormT = lt - alertAt;
+        const stormSeverity = THREE.MathUtils.clamp(stormT / 7.5, 0.08, 1);
+        _c1.copy(SKY_MARS_DAY).lerp(SKY_MARS_STORM, stormSeverity);
+        this.scene.background = _c1;
+        (this.scene.fog as THREE.FogExp2).color.copy(_c1);
+        (this.scene.fog as THREE.FogExp2).density = THREE.MathUtils.lerp(0.0085, 0.038, stormSeverity);
+        this.keyLight.intensity = 2.0 - stormSeverity * 1.15;
+
+        // Whipping cyclone dust particles accelerating steadily
+        const pAttr = this.marsEnv.dustParticles.geometry.attributes.position as THREE.BufferAttribute;
+        (this.marsEnv.dustParticles.material as THREE.PointsMaterial).opacity =
+          0.24 + stormSeverity * 0.72;
+        for (let i = 0; i < pAttr.count; i++) {
+          let px = pAttr.getX(i) + dt * (10 + stormSeverity * 60);
+          const py = pAttr.getY(i);
+          if (px > 70) px = -70;
+          pAttr.setXYZ(i, px, py, pAttr.getZ(i));
+        }
+        pAttr.needsUpdate = true;
+
+        // Teammates right beside MAV sprint straight to airlock hatch and board (before lt = 10.6s)
+        this.marsCrew.forEach((c, idx) => {
+          const reachT = THREE.MathUtils.clamp(stormT / 4.4, 0, 1);
+          c.group.visible = stormT < 4.9;
+          const startX = -5.5 + idx * 4.5;
+          const startZ = -26.5 + (idx % 2) * 2.5;
+          const cx = THREE.MathUtils.lerp(startX, (idx - 1) * 0.9, reachT);
+          const cz = THREE.MathUtils.lerp(startZ, -35.2, reachT);
+          c.group.position.set(cx, marsHeightAt(cx, cz), cz);
+          c.group.rotation.y = Math.PI;
+          poseAstronautSprint(c, stormT * 9.5 + idx);
+        });
+
+        // Comms severed at 11.8s -> crew forced to ignite MAV at 12.2s without waiting!
+        if (lt >= 12.2) {
+          const ascT = lt - 12.2;
+          const mavY = padY + Math.pow(ascT, 2.05) * 4.2;
+          this.marsMav.group.position.set(0, mavY, -36);
+          this.marsMav.group.rotation.z = Math.sin(lt * 5) * 0.015;
+          this.marsMav.flames[0].visible = true;
+          this.marsMav.flames[0].scale.set(1.15, 0.85 + Math.random() * 0.4, 1.15);
+        } else {
+          this.marsMav.group.position.set(0, padY, -36);
+          this.marsMav.group.rotation.z = Math.sin(lt * 7) * 0.03 * stormSeverity;
+          this.marsMav.flames[0].visible = false;
+        }
+
+        // Stranded astronaut sprints desperately from North Ridge toward the distant MAV but falls short!
+        const runP = THREE.MathUtils.clamp(stormT / 9.2, 0, 1);
+        const myX = THREE.MathUtils.lerp(13.0, 6.2, runP) + Math.sin(stormT * 2.4) * 0.45;
+        const myZ = THREE.MathUtils.lerp(35.6, 15.5, runP);
+        const shake = 0.03 + stormSeverity * 0.19;
+        const fallP = lt > 15.2 ? THREE.MathUtils.clamp((lt - 15.2) / 1.4, 0, 1) : 0;
+        const fallOffset = -fallP * 1.45;
+
+        this.camera.position.set(
+          myX + (Math.random() - 0.5) * shake,
+          marsHeightAt(myX, myZ) + 1.82 + Math.abs(Math.sin(stormT * 7.5)) * 0.065 + fallOffset,
+          myZ
+        );
+        this.camera.fov = 66;
+        this.camera.updateProjectionMatrix();
+        const targetY = lt >= 12.2 ? this.marsMav.group.position.y + 6.5 : padY + 6.0;
+        this.camera.lookAt(0, targetY + fallOffset * 2.2, -36);
       }
-
-      // Our astronaut is stranded far out at z = +28 -> +16 running helplessly toward MAV
-      const runP = THREE.MathUtils.clamp(lt / 10.5, 0, 1);
-      const myZ = THREE.MathUtils.lerp(28, 16, runP);
-      const myX = 6 + Math.sin(lt * 2.2) * 0.6;
-      const shake = 0.08 + stormSeverity * 0.16;
-      const fallOffset = lt > 11.4 ? -THREE.MathUtils.clamp((lt - 11.4) / 1.5, 0, 1) * 1.45 : 0;
-
-      this.camera.position.set(
-        myX + (Math.random() - 0.5) * shake,
-        marsHeightAt(myX, myZ) + 1.82 + Math.abs(Math.sin(lt * 7.5)) * 0.07 + fallOffset,
-        myZ
-      );
-      this.camera.fov = 66;
-      this.camera.updateProjectionMatrix();
-      const targetY = lt >= 8.0 ? this.marsMav.group.position.y + 6 : padY + 6;
-      this.camera.lookAt(0, targetY + fallOffset * 2, -36);
     } else if (id === 'awakening') {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = false;
@@ -1545,8 +1653,8 @@ export class CutsceneEngine {
     }
 
     let blackoutOpacity = 0;
-    if (id === 'storm_evacuation' && lt > 11.8) {
-      blackoutOpacity = THREE.MathUtils.clamp((lt - 11.8) / 1.8, 0, 1);
+    if (id === 'storm_evacuation' && lt > 15.8) {
+      blackoutOpacity = THREE.MathUtils.clamp((lt - 15.8) / 2.2, 0, 1);
     } else if (id === 'awakening' && lt < 2.4) {
       blackoutOpacity = 1 - THREE.MathUtils.clamp(lt / 2.4, 0, 1);
     }
@@ -1572,11 +1680,11 @@ export class CutsceneEngine {
       transitDistanceMkm: transitInfo.distanceMillionKm,
       transitPercent: transitInfo.progressPercent,
       solNumber,
-      stormAlertActive: id === 'storm_evacuation',
-      commsLost: id === 'storm_evacuation' && lt >= 7.8,
+      stormAlertActive: id === 'storm_evacuation' && lt >= 5.8,
+      commsLost: id === 'storm_evacuation' && lt >= 11.8,
       blackoutOpacity,
       helmetCracked:
-        (id === 'storm_evacuation' && lt >= 11.2) ||
+        (id === 'storm_evacuation' && lt >= 15.2) ||
         id === 'awakening' ||
         this.phase === 'survival',
       objectives: this.objectives,
