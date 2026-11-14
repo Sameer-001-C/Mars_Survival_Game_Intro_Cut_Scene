@@ -1,0 +1,6 @@
+{
+  "name": "Ares IV: Red Horizon",
+  "description": "First-person 3D Mars mission opening cutscene and survival prologue for NASA Space Apps Challenge 3.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
