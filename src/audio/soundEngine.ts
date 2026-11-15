@@ -1,4 +1,40 @@
-import type { ChapterId } from '../cutscene/timeline';
+import { CUTSCENE_CHAPTERS, type ChapterId } from '../cutscene/timeline';
+
+type AllowedVoice = 'Puck' | 'Charon' | 'Kore' | 'Fenrir' | 'Zephyr';
+
+function makeRadioDriveCurve(amount: number): Float32Array<ArrayBuffer> {
+  const n = 512;
+  const buf = new ArrayBuffer(n * 4);
+  const curve = new Float32Array(buf);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((1 + amount) * x) / (1 + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+function getVoiceProfile(
+  speaker: string,
+  tone: 'normal' | 'alert' | 'critical'
+): { voiceName: AllowedVoice; style: string } {
+  const urgency =
+    tone === 'critical'
+      ? 'Urgent tense astronaut voice over crackling suit radio'
+      : tone === 'alert'
+        ? 'Focused alert flight officer over cockpit radio'
+        : 'Crisp aircraft pilot radio voiceover, calm professional NASA mission control tone';
+
+  if (speaker === 'CDR. VANCE') {
+    return { voiceName: 'Charon', style: urgency };
+  }
+  if (speaker === 'CAPCOM' || speaker === 'FLIGHT CONTROL' || speaker === 'NAV COMPUTER') {
+    return { voiceName: 'Fenrir', style: urgency };
+  }
+  if (speaker === 'DR. LIN' || speaker === 'SHIP LOG' || speaker === 'FIELD LOG') {
+    return { voiceName: 'Kore', style: urgency };
+  }
+  return { voiceName: 'Puck', style: urgency };
+}
 
 export class SoundEngine {
   private ctx: AudioContext | null = null;
@@ -15,6 +51,18 @@ export class SoundEngine {
   private padOsc1: OscillatorNode | null = null;
   private padOsc2: OscillatorNode | null = null;
   private padOsc3: OscillatorNode | null = null;
+
+  // Aviation / spacecraft cockpit VHF radio DSP bus
+  private radioInput: GainNode | null = null;
+  private radioHissGain: GainNode | null = null;
+  private activeVoiceSrc: AudioBufferSourceNode | null = null;
+  private activeVoiceToken = 0;
+
+  private rawWavCache = new Map<string, ArrayBuffer>();
+  private voiceBufferCache = new Map<string, AudioBuffer>();
+  private voiceInFlight = new Map<string, Promise<ArrayBuffer | null>>();
+  private prefetchStarted = false;
+  private ttsUnavailable = false;
 
   private muted = false;
   private initialized = false;
@@ -140,6 +188,58 @@ export class SoundEngine {
       padOsc2.start();
       padOsc3.start();
 
+      // 4. Aviation / Pilot VHF Cockpit Radio DSP Chain (340Hz HP -> 1.48kHz presence -> 2.9kHz LP -> soft overdrive -> AGC)
+      const radioInput = ctx.createGain();
+      radioInput.gain.value = 1.0;
+
+      const radioHP = ctx.createBiquadFilter();
+      radioHP.type = 'highpass';
+      radioHP.frequency.value = 340;
+      radioHP.Q.value = 0.85;
+
+      const radioMid = ctx.createBiquadFilter();
+      radioMid.type = 'peaking';
+      radioMid.frequency.value = 1480;
+      radioMid.Q.value = 1.05;
+      radioMid.gain.value = 6.5;
+
+      const radioLP = ctx.createBiquadFilter();
+      radioLP.type = 'lowpass';
+      radioLP.frequency.value = 2900;
+      radioLP.Q.value = 1.05;
+
+      const radioShaper = ctx.createWaveShaper();
+      radioShaper.curve = makeRadioDriveCurve(2.2);
+      radioShaper.oversample = '2x';
+
+      const radioComp = ctx.createDynamicsCompressor();
+      radioComp.threshold.value = -20;
+      radioComp.knee.value = 10;
+      radioComp.ratio.value = 8;
+      radioComp.attack.value = 0.004;
+      radioComp.release.value = 0.12;
+
+      const radioOutGain = ctx.createGain();
+      radioOutGain.gain.value = 1.25;
+
+      radioInput.connect(radioHP);
+      radioHP.connect(radioMid);
+      radioMid.connect(radioLP);
+      radioLP.connect(radioShaper);
+      radioShaper.connect(radioComp);
+      radioComp.connect(radioOutGain);
+      radioOutGain.connect(master);
+
+      // Subtle continuous VHF carrier static bed while pilot radio is keyed open
+      const radioHissSrc = ctx.createBufferSource();
+      radioHissSrc.buffer = noiseBuffer;
+      radioHissSrc.loop = true;
+      const radioHissGain = ctx.createGain();
+      radioHissGain.gain.value = 0;
+      radioHissSrc.connect(radioHissGain);
+      radioHissGain.connect(radioHP);
+      radioHissSrc.start();
+
       this.ctx = ctx;
       this.masterGain = master;
       this.noiseBuffer = noiseBuffer;
@@ -152,6 +252,8 @@ export class SoundEngine {
       this.padOsc1 = padOsc1;
       this.padOsc2 = padOsc2;
       this.padOsc3 = padOsc3;
+      this.radioInput = radioInput;
+      this.radioHissGain = radioHissGain;
       this.initialized = true;
 
       if (ctx.state === 'suspended') {
@@ -174,11 +276,230 @@ export class SoundEngine {
   }
 
   public silenceLoops(): void {
+    this.stopActiveVoice();
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     this.rumbleGain?.gain.setTargetAtTime(0, now, 0.08);
     this.stormGain?.gain.setTargetAtTime(0, now, 0.08);
     this.padGain?.gain.setTargetAtTime(0, now, 0.12);
+    this.radioHissGain?.gain.setTargetAtTime(0, now, 0.04);
+  }
+
+  private stopActiveVoice(): void {
+    this.activeVoiceToken++;
+    if (this.activeVoiceSrc) {
+      try {
+        this.activeVoiceSrc.onended = null;
+        this.activeVoiceSrc.stop();
+      } catch {
+        // Already stopped
+      }
+      this.activeVoiceSrc = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // Ignore synthesis cancel errors
+      }
+    }
+    if (this.ctx && this.radioHissGain) {
+      this.radioHissGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+    }
+  }
+
+  private async fetchVoiceWav(
+    cueKey: string,
+    speaker: string,
+    text: string,
+    tone: 'normal' | 'alert' | 'critical'
+  ): Promise<ArrayBuffer | null> {
+    if (this.ttsUnavailable) return null;
+    const existingRaw = this.rawWavCache.get(cueKey);
+    if (existingRaw) return existingRaw;
+
+    const inflight = this.voiceInFlight.get(cueKey);
+    if (inflight) return inflight;
+
+    const { voiceName, style } = getVoiceProfile(speaker, tone);
+    const job = (async () => {
+      try {
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voiceName, style }),
+        });
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 503) {
+            this.ttsUnavailable = true;
+          }
+          return null;
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('audio/wav')) {
+          this.ttsUnavailable = true;
+          return null;
+        }
+        const arr = await res.arrayBuffer();
+        if (arr.byteLength < 64) return null;
+        this.rawWavCache.set(cueKey, arr);
+        return arr;
+      } catch {
+        return null;
+      } finally {
+        this.voiceInFlight.delete(cueKey);
+      }
+    })();
+
+    this.voiceInFlight.set(cueKey, job);
+    return job;
+  }
+
+  private async getDecodedVoiceBuffer(
+    cueKey: string,
+    speaker: string,
+    text: string,
+    tone: 'normal' | 'alert' | 'critical'
+  ): Promise<AudioBuffer | null> {
+    const cachedBuf = this.voiceBufferCache.get(cueKey);
+    if (cachedBuf) return cachedBuf;
+    if (!this.ctx) return null;
+
+    const raw = await this.fetchVoiceWav(cueKey, speaker, text, tone);
+    if (!raw || !this.ctx) return null;
+    try {
+      const decoded = await this.ctx.decodeAudioData(raw.slice(0));
+      this.voiceBufferCache.set(cueKey, decoded);
+      return decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  public prefetchCutsceneVoiceovers(priorityChapterIds: ChapterId[] = ['earth_farewell', 'boarding', 'launch']): void {
+    if (this.prefetchStarted) return;
+    this.prefetchStarted = true;
+
+    const prioritySet = new Set(priorityChapterIds);
+    const orderedChapters = [
+      ...CUTSCENE_CHAPTERS.filter((c) => prioritySet.has(c.id)),
+      ...CUTSCENE_CHAPTERS.filter((c) => !prioritySet.has(c.id)),
+    ];
+
+    const queue: Array<{
+      key: string;
+      speaker: string;
+      text: string;
+      tone: 'normal' | 'alert' | 'critical';
+    }> = [];
+
+    for (const ch of orderedChapters) {
+      for (const sub of ch.subtitles) {
+        queue.push({
+          key: `${ch.id}:${sub.at}:${sub.speaker}`,
+          speaker: sub.speaker,
+          text: sub.text,
+          tone: sub.tone ?? 'normal',
+        });
+      }
+    }
+
+    const worker = async () => {
+      while (queue.length > 0 && !this.ttsUnavailable) {
+        const item = queue.shift();
+        if (!item) break;
+        await this.fetchVoiceWav(item.key, item.speaker, item.text, item.tone);
+      }
+    };
+
+    void worker();
+  }
+
+  private speakBrowserFallback(
+    token: number,
+    speaker: string,
+    text: string,
+    tone: 'normal' | 'alert' | 'critical'
+  ): void {
+    if (
+      typeof window === 'undefined' ||
+      !('speechSynthesis' in window) ||
+      this.muted ||
+      !this.ctx
+    ) {
+      return;
+    }
+
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = speaker === 'CAPCOM' ? 1.04 : tone === 'critical' ? 1.12 : 1.0;
+      utter.pitch = speaker === 'DR. LIN' ? 1.18 : 0.94;
+      utter.volume = 0.85;
+
+      const now = this.ctx.currentTime;
+      this.radioHissGain?.gain.setTargetAtTime(0.035, now, 0.02);
+
+      utter.onend = () => {
+        if (this.ctx && this.radioHissGain) {
+          this.radioHissGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+        }
+        if (token === this.activeVoiceToken) {
+          this.playNoiseBurst(0.055, 'bandpass', 2100, 0.09);
+        }
+      };
+      utter.onerror = () => {
+        if (this.ctx && this.radioHissGain) {
+          this.radioHissGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+        }
+      };
+
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // Ignore synthesis unavailability
+    }
+  }
+
+  private async playRadioVoiceover(
+    cueKey: string,
+    speaker: string,
+    text: string,
+    tone: 'normal' | 'alert' | 'critical'
+  ): Promise<void> {
+    if (!this.ensurePlayable() || !this.ctx || !this.radioInput) return;
+
+    this.stopActiveVoice();
+    const token = this.activeVoiceToken;
+    const buffer = await this.getDecodedVoiceBuffer(cueKey, speaker, text, tone);
+    if (token !== this.activeVoiceToken || !this.ensurePlayable() || !this.ctx || !this.radioInput) {
+      return;
+    }
+
+    if (!buffer) {
+      this.speakBrowserFallback(token, speaker, text, tone);
+      return;
+    }
+
+    const now = this.ctx.currentTime;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(this.radioInput);
+    this.activeVoiceSrc = src;
+
+    this.radioHissGain?.gain.setTargetAtTime(0.028, now, 0.02);
+
+    src.onended = () => {
+      if (this.activeVoiceSrc === src) {
+        this.activeVoiceSrc = null;
+      }
+      if (this.ctx && this.radioHissGain) {
+        this.radioHissGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+      }
+      if (token === this.activeVoiceToken) {
+        this.playNoiseBurst(0.055, 'bandpass', 2100, 0.09);
+      }
+    };
+
+    src.start(now + 0.08);
   }
 
   private ensurePlayable(): boolean {
@@ -317,7 +638,9 @@ export class SoundEngine {
     countdownNumber: number,
     ignited: boolean,
     subtitleKey = '',
-    subtitleTone: 'normal' | 'alert' | 'critical' = 'normal'
+    subtitleTone: 'normal' | 'alert' | 'critical' = 'normal',
+    subtitleSpeaker = '',
+    subtitleText = ''
   ): void {
     if (!this.ensurePlayable() || !this.ctx || !this.masterGain) return;
     const now = this.ctx.currentTime;
@@ -330,7 +653,9 @@ export class SoundEngine {
       this.lastConsoleTick = -1;
       this.lastAlarmTick = -1;
       this.lastSolTick = -1;
+      this.lastSubtitleKey = '';
       this.triggeredEvents.clear();
+      this.stopActiveVoice();
 
       if (chapterId === 'earth_farewell') {
         this.playTone(392.0, 0.22, 'triangle', 0.18, 0);
@@ -355,6 +680,9 @@ export class SoundEngine {
     if (subtitleKey && subtitleKey !== this.lastSubtitleKey) {
       this.lastSubtitleKey = subtitleKey;
       this.playCommsChirp(subtitleTone);
+      if (subtitleText) {
+        void this.playRadioVoiceover(subtitleKey, subtitleSpeaker, subtitleText, subtitleTone);
+      }
     } else if (!subtitleKey) {
       this.lastSubtitleKey = '';
     }

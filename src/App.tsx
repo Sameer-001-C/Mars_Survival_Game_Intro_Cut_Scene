@@ -68,6 +68,7 @@ export default function App() {
 
     const sound = new SoundEngine();
     soundRef.current = sound;
+    sound.prefetchCutsceneVoiceovers(['earth_farewell', 'boarding', 'launch']);
 
     const unlockOnce = () => sound.unlock(true);
     window.addEventListener('pointerdown', unlockOnce, { passive: true });

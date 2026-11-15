@@ -110,6 +110,25 @@ export const CutsceneHUD: React.FC<CutsceneHUDProps> = ({
             ·
           </span>
           <span className="hidden sm:inline text-slate-400">{hud.location}</span>
+          {hud.subtitleSpeaker && (
+            <>
+              <span aria-hidden="true" className="hidden md:inline text-slate-600">
+                ·
+              </span>
+              <span
+                className={`hidden md:inline-flex items-center gap-1.5 font-mono-tech ${
+                  hud.subtitleTone === 'critical'
+                    ? 'text-red-400'
+                    : hud.subtitleTone === 'alert'
+                      ? 'text-amber-300'
+                      : 'text-sky-300'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span>RADIO TX · {hud.subtitleSpeaker}</span>
+              </span>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-2 pointer-events-auto">
@@ -243,25 +262,8 @@ export const CutsceneHUD: React.FC<CutsceneHUDProps> = ({
         )}
       </div>
 
-      {/* Bottom Subtitle + Collapsible Chapter Dock */}
+      {/* Bottom Collapsible Chapter Dock (bulky subtitles removed in favor of cockpit radio voiceover) */}
       <div className="relative z-10 flex flex-col items-center pb-12 px-4 gap-3">
-        {hud.subtitleText && (
-          <div
-            className={`max-w-2xl w-full px-5 py-3 rounded-lg border text-center ${
-              hud.subtitleTone === 'critical'
-                ? 'bg-[#2a0c09]/92 border-red-400/45 text-red-50'
-                : hud.subtitleTone === 'alert'
-                  ? 'bg-[#211509]/92 border-amber-400/45 text-amber-50'
-                  : 'bg-[#0a0d14]/90 border-white/15 text-slate-100'
-            }`}
-          >
-            <div className="text-[11px] font-mono-tech tracking-wider text-amber-400 mb-0.5">
-              {hud.subtitleSpeaker}
-            </div>
-            <p className="text-sm md:text-base leading-snug">{hud.subtitleText}</p>
-          </div>
-        )}
-
         {/* Collapsible bottom chapter scrubber dock */}
         <div className="pointer-events-auto flex flex-col items-center">
           <button

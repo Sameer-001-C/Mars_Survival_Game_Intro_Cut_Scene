@@ -825,6 +825,7 @@ export class CutsceneEngine {
 
   public startCutscene(fromStart = true): void {
     this.sound.unlock(false);
+    this.sound.prefetchCutsceneVoiceovers();
     if (fromStart) {
       this.cutsceneTime = 0;
     }
@@ -834,6 +835,7 @@ export class CutsceneEngine {
 
   public jumpToChapter(id: ChapterId): void {
     this.sound.unlock(true);
+    this.sound.prefetchCutsceneVoiceovers([id, 'launch']);
     this.cutsceneTime = getChapterStartTime(id);
     this.phase = 'cutscene';
     this.pushHudSnapshot(true);
@@ -995,6 +997,8 @@ export class CutsceneEngine {
       ? `${state.chapter.id}:${state.activeSubtitle.at}:${state.activeSubtitle.speaker}`
       : '';
     const subTone = state.activeSubtitle?.tone ?? 'normal';
+    const subSpeaker = state.activeSubtitle?.speaker ?? '';
+    const subText = state.activeSubtitle?.text ?? '';
 
     if (id === 'earth_farewell') {
       this.earthGroup.visible = true;
@@ -1002,7 +1006,7 @@ export class CutsceneEngine {
       this.marsGroup.visible = false;
       this.cockpitGroup.visible = false;
       this.exhaustParticles.visible = false;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       this.scene.background = _c1.copy(SKY_EARTH);
       (this.scene.fog as THREE.FogExp2).color.copy(SKY_EARTH);
@@ -1038,7 +1042,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = true;
       this.spaceGroup.visible = false;
       this.marsGroup.visible = false;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       this.earthRocket.group.position.set(0, 1.45, 0);
       this.earthRocket.flames.forEach((f) => (f.visible = false));
@@ -1069,7 +1073,7 @@ export class CutsceneEngine {
       this.cockpitGroup.visible = false;
 
       const { count, ignited } = getLaunchCountdownValue(lt);
-      this.sound.updateCutsceneAudio(id, lt, count, ignited, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, count, ignited, subKey, subTone, subSpeaker, subText);
 
       // Retract crew access arm at T-2s
       const armRetract = THREE.MathUtils.clamp((lt - 3.2) / 1.8, 0, 1);
@@ -1152,7 +1156,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = true;
       this.marsGroup.visible = false;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       this.scene.background = _c1.copy(SKY_ORBIT);
       (this.scene.fog as THREE.FogExp2).density = 0;
@@ -1247,7 +1251,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = false;
       this.marsGroup.visible = true;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       this.scene.background = _c1.copy(SKY_MARS_DAY);
       (this.scene.fog as THREE.FogExp2).color.copy(SKY_MARS_DAY);
@@ -1279,7 +1283,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = false;
       this.marsGroup.visible = true;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       const padY = marsHeightAt(0, -36);
       this.marsMav.group.position.set(0, padY, -36);
@@ -1352,7 +1356,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = false;
       this.marsGroup.visible = true;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       const padY = marsHeightAt(0, -36);
       const alertAt = 5.8;
@@ -1477,7 +1481,7 @@ export class CutsceneEngine {
       this.earthGroup.visible = false;
       this.spaceGroup.visible = false;
       this.marsGroup.visible = true;
-      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone);
+      this.sound.updateCutsceneAudio(id, lt, 0, false, subKey, subTone, subSpeaker, subText);
 
       this.marsMav.group.position.set(0, 400, -36); // MAV is long gone
       this.marsCrew.forEach((c) => (c.group.visible = false));

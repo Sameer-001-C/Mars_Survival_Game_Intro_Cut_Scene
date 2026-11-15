@@ -38,16 +38,16 @@ export const CUTSCENE_CHAPTERS: ChapterSpec[] = [
     duration: 9.5,
     subtitles: [
       {
-        at: 0.4,
-        duration: 4.2,
+        at: 0.3,
+        duration: 4.1,
         speaker: 'CDR. VANCE',
-        text: 'Ares IV crew, final suit pressure check green. Proceed down the departure gantry to the pad.',
+        text: 'Ares Four crew, suit pressure nominal, green across all seals. Proceeding down Wing B gantry.',
       },
       {
-        at: 5.0,
-        duration: 4.1,
+        at: 4.9,
+        duration: 4.2,
         speaker: 'FLIGHT CONTROL',
-        text: 'Tower elevator ready at Wing B. Eight months to Mars—godspeed, Ares IV.',
+        text: 'Launch Control copies. Fuel cells topped, guidance aligned. Eight months to Mars—godspeed, Ares Four.',
       },
     ],
   },
@@ -59,16 +59,16 @@ export const CUTSCENE_CHAPTERS: ChapterSpec[] = [
     duration: 7.5,
     subtitles: [
       {
-        at: 0.5,
+        at: 0.3,
         duration: 3.3,
         speaker: 'DR. LIN',
-        text: 'Hatch seal verified. Cabin pressure nominal at 101.3 kPa.',
+        text: 'Forward hatch locked. Cabin oxygen purge complete, holding one-oh-one point three kilopascals.',
       },
       {
-        at: 4.0,
-        duration: 3.2,
+        at: 3.8,
+        duration: 3.4,
         speaker: 'CDR. VANCE',
-        text: 'Strap in, everyone. Flight Director, Ares IV is locked in and ready for terminal count.',
+        text: 'Pre-flight checklist complete. APU online, gimbal check good. Armed for terminal count.',
       },
     ],
   },
@@ -80,16 +80,16 @@ export const CUTSCENE_CHAPTERS: ChapterSpec[] = [
     duration: 14.5,
     subtitles: [
       {
-        at: 0.3,
-        duration: 5.0,
+        at: 0.15,
+        duration: 5.1,
         speaker: 'CAPCOM',
-        text: 'Terminal countdown initiated. Main engine start sequence armed—five, four, three, two, one.',
+        text: 'All stations go for launch. Terminal count... Five... Four... Three... Two... One... Main engine start!',
       },
       {
         at: 5.4,
-        duration: 4.2,
+        duration: 4.1,
         speaker: 'CDR. VANCE',
-        text: 'Ignition! Solid boosters lit—we have liftoff! Clearing the tower now.',
+        text: 'Ignition confirmed! Solid boosters lit—we have liftoff! Clearing the launch tower now.',
       },
       {
         at: 9.8,
